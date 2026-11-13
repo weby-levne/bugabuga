@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Driving School Simulator",
+  "short_name": "DSS",
+  "description": "Bezplatný offline simulátor řízení.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#080b10",
+  "theme_color": "#080b10",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
