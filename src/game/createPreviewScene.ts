@@ -27,11 +27,11 @@ export function createPreviewScene(canvas:HTMLCanvasElement):GameScene {
  const lampMat=new THREE.MeshStandardMaterial({color:'#fff3c4',emissive:'#000000'});for(const x of [-.62,.62]){const l=new THREE.Mesh(new THREE.BoxGeometry(.35,.16,.05),lampMat);l.position.set(x,.82,-1.98);car.add(l);}
  const indicatorMat=new THREE.MeshStandardMaterial({color:'#ffad38',emissive:'#000000'});for(const x of [-.83,.83])for(const z of [-1.99,1.99]){const ind=new THREE.Mesh(new THREE.BoxGeometry(.16,.12,.06),indicatorMat);ind.position.set(x,.78,z);car.add(ind);}
  const resize=()=>{const w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)};window.addEventListener('resize',resize);resize();
- let camMode:'chase'|'cockpit'|'orbit'='chase', worldZ=0, yaw=0, orbitX=0,orbitY=0;
+ let camMode:'chase'|'cockpit'|'orbit'='chase', worldZ=0, yaw=0, carX=0, orbitX=0,orbitY=0;
  let dragging=false,lastX=0,lastY=0,indicatorMode:'off'|'left'|'right'|'hazard'='off',blink=0;
  const down=(e:PointerEvent)=>{if(camMode!=='orbit')return;dragging=true;lastX=e.clientX;lastY=e.clientY}; const move=(e:PointerEvent)=>{if(!dragging)return;orbitX+=(e.clientX-lastX)*.006;orbitY=THREE.MathUtils.clamp(orbitY+(e.clientY-lastY)*.004,-.3,1.1);lastX=e.clientX;lastY=e.clientY};const up=()=>dragging=false;
  canvas.addEventListener('pointerdown',down);window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);
- return {update(dt,input,state){worldZ-=state.speed*dt/3.6; blink+=dt;indicatorMat.emissive.set(indicatorMode!=='off'&&Math.floor(blink*2)%2===0?'#ff8a16':'#000000');indicatorMat.emissiveIntensity=indicatorMode!=='off'?1.5:0; yaw=THREE.MathUtils.lerp(yaw,input.steer*.42,.08);car.rotation.y=yaw;car.position.set(Math.sin(yaw)*Math.min(2.2,state.speed/25),0,2.2); wheels.forEach(w=>{w.rotation.x-=state.speed*dt/3.6*2.5});
+ return {update(dt,input,state){worldZ-=state.speed*dt/3.6; blink+=dt;indicatorMat.emissive.set(indicatorMode!=='off'&&Math.floor(blink*2)%2===0?'#ff8a16':'#000000');indicatorMat.emissiveIntensity=indicatorMode!=='off'?1.5:0; yaw=THREE.MathUtils.lerp(yaw,input.steer*(.22+.38*Math.min(Math.abs(state.speed)/45,1)),.12);carX=THREE.MathUtils.clamp(carX+Math.sin(yaw)*Math.abs(state.speed)*dt/3.6*.32,-4.7,4.7);car.rotation.y=yaw;car.position.set(carX,0,2.2); wheels.forEach(w=>{w.rotation.x-=state.speed*dt/3.6*2.5});
  // Move the scenery to simulate an endless road.
  scene.children.forEach(o=>{if(o.userData.roadside){o.position.z+=state.speed*dt/3.6;if(o.position.z>18)o.position.z-=470;}});
  const target=new THREE.Vector3(car.position.x,camMode==='cockpit'?1.45:1.0,car.position.z-.4);
