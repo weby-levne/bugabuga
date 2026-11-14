@@ -1,46 +1,38 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPreviewScene, type PreviewScene } from '../game/createPreviewScene';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { createPreviewScene, type GameInput, type GameScene, type GameState, type Gear } from '../game/createPreviewScene';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type GraphicsPreset, type LocalSettings } from '../storage/settings';
 
-type Screen = 'menu' | 'driving' | 'settings';
-
-function DrivingView({ onExit }: { onExit: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [graphicsError, setGraphicsError] = useState('');
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    let preview: PreviewScene | undefined;
-    try {
-      preview = createPreviewScene(canvas);
-    } catch (error) {
-      console.error(error);
-      setGraphicsError('3D náhled nelze spustit. Zkontroluj podporu WebGL a zkus nižší grafické nastavení.');
-    }
-    return () => preview?.dispose();
-  }, []);
-
-  return <main className="drive-screen">
-    <canvas ref={canvasRef} className="world-canvas" aria-label="3D náhled tréninkové silnice" />
-    <div className="drive-topbar"><button className="icon-button" onClick={onExit} aria-label="Zpět do menu">←</button><div><span className="eyebrow">VOLNÁ JÍZDA · PROTOTYP</span><strong>Tréninková oblast</strong></div><span className="offline-pill">OFFLINE</span></div>
-    {graphicsError && <div className="graphics-error" role="alert">{graphicsError}</div>}
-    <div className="prototype-note">Základní 3D scéna · fyzika vozidla se připravuje</div>
-    <div className="drive-bottom"><div className="telemetry"><span>RYCHLOST</span><strong>0 <small>km/h</small></strong></div><div className="telemetry"><span>PŘEVOD</span><strong>N</strong></div><div className="telemetry"><span>OTÁČKY</span><strong>800 <small>rpm</small></strong></div></div>
-  </main>;
+type Screen='menu'|'driving'|'settings';
+type Control=keyof GameInput;
+const initial:GameState={speed:0,rpm:850,gear:0,fuel:48,engine:false,stalled:false,distance:0,steering:0};
+const gearNames:Record<Gear,string>={[-1]:'R',[0]:'N',[1]:'1',[2]:'2',[3]:'3',[4]:'4',[5]:'5',[6]:'6'};
+function DrivingView({onExit}:{onExit:()=>void}){
+ const canvasRef=useRef<HTMLCanvasElement>(null),sceneRef=useRef<GameScene|null>(null),inputRef=useRef<GameInput>({throttle:0,brake:0,clutch:0,steer:0,handbrake:false}),stateRef=useRef<GameState>({...initial});
+ const [state,setState]=useState<GameState>({...initial}),[camera,setCamera]=useState<'chase'|'cockpit'|'orbit'>('chase'),[lights,setLights]=useState(false),[signal,setSignal]=useState<'off'|'left'|'right'|'hazard'>('off'),[auto,setAuto]=useState(false),[menu,setMenu]=useState(false),[message,setMessage]=useState('Vlož klíček a nastartuj motor');
+ useEffect(()=>{const c=canvasRef.current;if(!c)return;let game:GameScene;try{game=createPreviewScene(c);sceneRef.current=game;}catch(e){console.error(e);setMessage('3D grafiku se nepodařilo spustit. Zkus v nastavení nižší kvalitu.');return;}let raf=0,last=performance.now(),ui=0;
+ const frame=(now:number)=>{const dt=Math.min(.05,(now-last)/1000);last=now;const s=stateRef.current,i=inputRef.current;const clutch=i.clutch;const ratio=[0,3.25,2.05,1.42,1.05,.82,.68][Math.abs(s.gear)]||0;
+ if(s.engine&&!s.stalled){if(auto){if(s.speed>48&&s.gear<5)s.gear=(s.gear+1) as Gear;if(s.speed<12&&s.gear>2)s.gear=(s.gear-1) as Gear;if(s.gear===0)s.gear=1;}
+ const drive=s.gear===0?0:(s.gear<0?-1:1);const clutchFactor=auto?1:Math.max(0,1-clutch);const accel=i.throttle*7.2*clutchFactor*(drive===-1?-.65:1)/(1+Math.abs(s.speed)*.025);const braking=i.brake*13+(i.handbrake?5:0);let v=s.speed/3.6;v+=(accel-Math.sign(v)*braking)*dt;if(Math.abs(v)<.08&&i.brake>.2)v=0;if(!i.throttle&&i.brake===0)v*=Math.pow(.985,dt*60);s.speed=THREE_CLAMP(v*3.6,-18,180);
+ const target=850+Math.abs(s.speed)*ratio*42+i.throttle*850; s.rpm+=(target-s.rpm)*Math.min(1,dt*4);if(!auto&&s.gear!==0&&clutch<.15&&Math.abs(s.speed)<3&&i.throttle<.18){s.rpm-=dt*1000;if(s.rpm<420){s.engine=false;s.stalled=true;setMessage('Motor zhasl. Sešlápni spojku a znovu nastartuj.');}}else{s.stalled=false;}
+ s.fuel=Math.max(0,s.fuel-dt*(.00012+i.throttle*.00065));}else{s.rpm=Math.max(0,s.rpm-dt*900);s.speed*=Math.pow(.96,dt*60);}
+ s.distance+=Math.abs(s.speed)*dt/3600;s.steering=i.steer;game.update(dt,i,s);if(now-ui>120){setState({...s});ui=now;}raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);
+ return()=>{cancelAnimationFrame(raf);game.dispose();sceneRef.current=null;};},[auto]);
+ useEffect(()=>{const down=(e:KeyboardEvent)=>{const i=inputRef.current;const map:Record<string,Control>={w:'throttle',ArrowUp:'throttle',s:'brake',ArrowDown:'brake',a:'steer',ArrowLeft:'steer',d:'steer',ArrowRight:'steer',Shift:'clutch',Space:'handbrake'};const k=map[e.key];if(k){e.preventDefault();if(k==='steer')i.steer=e.key==='a'||e.key==='ArrowLeft'?-1:1;else if(k==='handbrake')i.handbrake=true;else i[k]=1;}if(/^([1-6])$/.test(e.key))changeGear(Number(e.key) as Gear);if(e.key.toLowerCase()==='n')changeGear(0);if(e.key.toLowerCase()==='r')changeGear(-1);};const up=(e:KeyboardEvent)=>{const i=inputRef.current;const map:Record<string,Control>={w:'throttle',ArrowUp:'throttle',s:'brake',ArrowDown:'brake',a:'steer',ArrowLeft:'steer',d:'steer',ArrowRight:'steer',Shift:'clutch',Space:'handbrake'};const k=map[e.key];if(k){if(k==='steer')i.steer=0;else if(k==='handbrake')i.handbrake=false;else i[k]=0;}};window.addEventListener('keydown',down);window.addEventListener('keyup',up);return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};});
+ const changeGear=(g:Gear)=>{const s=stateRef.current;if(!auto&&Math.abs(s.speed)>3&&inputRef.current.clutch<.8){setMessage('Při řazení sešlápni spojku.');return;}s.gear=g;setState({...s});setMessage(`Zařazeno: ${gearNames[g]}`);};
+ const start=()=>{const s=stateRef.current;if(!s.engine){if(!auto&&s.gear!==0&&inputRef.current.clutch<.8){setMessage('Pro nastartování sešlápni spojku nebo vyřaď.');return;}s.engine=true;s.stalled=false;s.rpm=850;setMessage('Motor běží. Připoutej se a vyraž!');setState({...s});}};
+ const hold=(key:Control,value:number|boolean)=> (e:PointerEvent)=>{e.preventDefault();(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);(inputRef.current as any)[key]=value;};const release=(key:Control)=>(e:PointerEvent)=>{e.preventDefault();(inputRef.current as any)[key]=key==='handbrake'?false:0;};
+ const pedal=(name:string,key:Control,desc:string)=> <button className={`pedal ${key}`} onPointerDown={hold(key,1)} onPointerUp={release(key)} onPointerCancel={release(key)} onContextMenu={e=>e.preventDefault()}><span>{name}</span><small>{desc}</small></button>;
+ return <main className="drive-screen"><canvas ref={canvasRef} className="world-canvas"/><div className="drive-topbar"><button className="icon-button" onClick={()=>setMenu(true)}>☰</button><div><span className="eyebrow">VOLNÁ JÍZDA</span><strong>Okresní silnice</strong></div><span className="offline-pill">● OFFLINE</span></div>
+ <div className="dashboard"><div><small>RYCHLOST</small><strong>{Math.round(Math.abs(state.speed))}<i> km/h</i></strong></div><div><small>OTÁČKY</small><strong>{Math.round(state.rpm)}<i> rpm</i></strong><div className="rpmbar"><span style={{width:`${Math.min(100,state.rpm/65)}%`}}/></div></div><div><small>PŘEVOD</small><strong>{gearNames[state.gear]}</strong></div><div><small>PALIVO</small><strong>{Math.round(state.fuel)}<i> %</i></strong></div></div>
+ <div className="drive-tools"><button onClick={()=>{const m=camera==='chase'?'cockpit':camera==='cockpit'?'orbit':'chase';setCamera(m);sceneRef.current?.setCamera(m);}}>KAMERA: {camera==='chase'?'VENKOVNÍ':camera==='cockpit'?'KOKPIT':'VOLNÁ'}</button><button onClick={()=>{setLights(!lights);sceneRef.current?.setLights(!lights);}}>SVĚTLA {lights?'ZAP':'VYP'}</button><button onClick={()=>setAuto(!auto)}>PŘEVODOVKA: {auto?'AUTO':'MAN'}</button><button onClick={()=>{const next=signal==='left'?'right':'left';setSignal(next);sceneRef.current?.setIndicators(next);}}>BLINKR: {signal==='left'?'LEVÝ':signal==='right'?'PRAVÝ':'VYP'}</button><button onClick={()=>{const next=signal==='hazard'?'off':'hazard';setSignal(next);sceneRef.current?.setIndicators(next);}}>VÝSTRAŽNÉ</button></div>
+ <div className="gearbox"><button onClick={()=>changeGear(-1)}>R</button><button onClick={()=>changeGear(0)}>N</button>{([1,2,3,4,5,6] as Gear[]).map(g=><button key={g} className={state.gear===g?'selected':''} onClick={()=>changeGear(g)}>{g}</button>)}<button onClick={()=>{inputRef.current.handbrake=!inputRef.current.handbrake;setMessage(inputRef.current.handbrake?'Ruční brzda zatažena':'Ruční brzda uvolněna');}}>RUČNÍ</button></div>
+ <div className="pedal-area">{pedal('SPOJKA','clutch','držet')}{pedal('BRZDA','brake','držet')}{pedal('PLYN','throttle','držet')}<div className="steering"><button onPointerDown={hold('steer',-1)} onPointerUp={release('steer')} onPointerCancel={release('steer')}>◀</button><span>ŘÍZENÍ</span><button onPointerDown={hold('steer',1)} onPointerUp={release('steer')} onPointerCancel={release('steer')}>▶</button></div></div>
+ <div className="engine-control"><button onClick={start}>{state.engine?'MOTOR BĚŽÍ':'⏻ START MOTORU'}</button><span>{message}</span></div>
+ {menu&&<div className="pause-overlay"><section><span className="eyebrow">DRIVING SCHOOL SIMULATOR</span><h2>Pozastaveno</h2><button className="primary-button" onClick={()=>setMenu(false)}>POKRAČOVAT V JÍZDĚ</button><button className="secondary-button" onClick={onExit}>ZPĚT DO MENU</button><p>Ujetá vzdálenost: {(state.distance).toFixed(2)} km</p></section></div>}
+ </main>;
 }
-
-export function App() {
-  const [screen, setScreen] = useState<Screen>('menu');
-  const [settings, setSettings] = useState<LocalSettings>(() => loadSettings());
-  const updateSettings = (next: LocalSettings) => { setSettings(next); saveSettings(next); };
-
-  if (screen === 'driving') return <DrivingView onExit={() => setScreen('menu')} />;
-  if (screen === 'settings') return <main className="menu-shell"><header className="topbar"><span className="brand-mark">&</span><span className="eyebrow">NASTAVENÍ</span><span className="offline-pill">OFFLINE</span></header><section className="settings-panel"><button className="back-link" onClick={() => setScreen('menu')}>← Zpět do menu</button><h1>Nastavení</h1><p className="muted">Změny se ukládají pouze do tohoto zařízení.</p><label className="setting-row"><span><strong>Grafická kvalita</strong><small>Vyšší kvalita může snížit výkon na mobilu.</small></span><select value={settings.graphics} onChange={(event) => updateSettings({ ...settings, graphics: event.target.value as GraphicsPreset })}><option value="performance">Výkon</option><option value="balanced">Vyvážená</option><option value="quality">Kvalita</option></select></label><label className="setting-row"><span><strong>Zvuk</strong><small>Zvukový systém bude doplněn v další etapě.</small></span><input type="checkbox" checked={settings.soundEnabled} onChange={(event) => updateSettings({ ...settings, soundEnabled: event.target.checked })} /></label><button className="secondary-button" onClick={() => updateSettings(DEFAULT_SETTINGS)}>Obnovit výchozí nastavení</button></section></main>;
-
-  return <main className="menu-shell">
-    <div className="ambient ambient-one" /><div className="ambient ambient-two" />
-    <header className="topbar"><div className="brand"><span className="brand-mark">&</span><div><strong>DRIVING SCHOOL</strong><span>SIMULATOR</span></div></div><div className="topbar-right"><span className="offline-pill"><i /> PLNĚ OFFLINE</span><button className="icon-button" onClick={() => setScreen('settings')} aria-label="Nastavení">⚙</button></div></header>
-    <section className="hero"><div className="hero-copy"><span className="eyebrow">PRODUCTION EDITION</span><h1>Nauč se řídit.<br /><em>Ovládni cestu.</em></h1><p>Realistický řidičský simulátor. Bez účtů, bez reklam a bez připojení k internetu po instalaci.</p><div className="menu-actions"><button className="primary-button" onClick={() => setScreen('driving')}>ZAHÁJIT JÍZDU <span>→</span></button><button className="secondary-button" onClick={() => setScreen('settings')}>NASTAVENÍ</button></div><div className="platform-note"><span>ANDROID</span><b>·</b><span>TABLET</span><b>·</b><span>PC</span></div></div><div className="hero-art"><div className="ring ring-one"/><div className="ring ring-two"/><div className="car-silhouette"><div className="car-roof"/><div className="car-body"/><i className="wheel wheel-left"/><i className="wheel wheel-right"/></div><div className="art-caption">01 <span>/</span> DRIVE</div></div></section>
-    <footer className="menu-footer"><span>BUILD 0.1.0 · TECHNICKÝ ZÁKLAD</span><span>100% ZDARMA <b>·</b> BEZ REKLAM</span></footer>
-  </main>;
+function THREE_CLAMP(v:number,min:number,max:number){return Math.max(min,Math.min(max,v));}
+export function App(){const [screen,setScreen]=useState<Screen>('menu');const [settings,setSettings]=useState<LocalSettings>(()=>loadSettings());const update=(s:LocalSettings)=>{setSettings(s);saveSettings(s)};if(screen==='driving')return <DrivingView onExit={()=>setScreen('menu')}/>;
+ if(screen==='settings')return <main className="menu-shell"><header className="topbar"><span className="brand-mark">&</span><span className="eyebrow">NASTAVENÍ</span><span className="offline-pill">OFFLINE</span></header><section className="settings-panel"><button className="back-link" onClick={()=>setScreen('menu')}>← Zpět do menu</button><h1>Nastavení</h1><p className="muted">Nastavení se ukládá v tomto zařízení.</p><label className="setting-row"><span><strong>Grafická kvalita</strong><small>Vyšší kvalita může snížit výkon telefonu.</small></span><select value={settings.graphics} onChange={e=>update({...settings,graphics:e.target.value as GraphicsPreset})}><option value="performance">Výkon</option><option value="balanced">Vyvážená</option><option value="quality">Kvalita</option></select></label><label className="setting-row"><span><strong>Zvuk</strong><small>Zvukové efekty (základní).</small></span><input type="checkbox" checked={settings.soundEnabled} onChange={e=>update({...settings,soundEnabled:e.target.checked})}/></label><button className="secondary-button" onClick={()=>update(DEFAULT_SETTINGS)}>Obnovit výchozí nastavení</button></section></main>;
+ return <main className="menu-shell"><div className="ambient ambient-one"/><div className="ambient ambient-two"/><header className="topbar"><div className="brand"><span className="brand-mark">&</span><div><strong>DRIVING SCHOOL</strong><span>SIMULATOR</span></div></div><div className="topbar-right"><span className="offline-pill"><i/> PLNĚ OFFLINE</span><button className="icon-button" onClick={()=>setScreen('settings')}>⚙</button></div></header><section className="hero"><div className="hero-copy"><span className="eyebrow">ULTIMATE EDITION · BUILD 0.2</span><h1>Nauč se řídit.<br/><em>Ovládni cestu.</em></h1><p>Offline řidičský simulátor s manuálním řazením, spojkou, pedály a dotykovým ovládáním. Bez účtů a reklam.</p><div className="menu-actions"><button className="primary-button" onClick={()=>setScreen('driving')}>ZAHÁJIT JÍZDU <span>→</span></button><button className="secondary-button" onClick={()=>setScreen('settings')}>NASTAVENÍ</button></div><div className="platform-note"><span>ANDROID</span><b>·</b><span>TABLET</span><b>·</b><span>PC</span></div></div><div className="hero-art"><div className="ring ring-one"/><div className="ring ring-two"/><div className="car-silhouette"><div className="car-roof"/><div className="car-body"/><i className="wheel wheel-left"/><i className="wheel wheel-right"/></div><div className="art-caption">01 <span>/</span> DRIVE</div></div></section><footer className="menu-footer"><span>BUILD 0.2.0 · HRATELNÝ ZÁKLAD</span><span>100% ZDARMA <b>·</b> BEZ REKLAM</span></footer></main>;
 }

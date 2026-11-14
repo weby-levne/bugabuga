@@ -1,20 +1,9 @@
-# Migration status
+# Implementation status
 
-## Stage 1 — foundation (source created; build verification pending)
+This archive contains a playable browser prototype with a procedural Three.js road scene, player vehicle, touch/keyboard input, gear selection, clutch-aware start/stall behavior, basic automatic shifting, dashboard telemetry, camera modes, headlights and local settings.
 
-- [x] Preserve the supplied source archive as `reference/ORIGINAL_PROJECT.zip`.
-- [x] Establish React + TypeScript + Vite project configuration.
-- [x] Create responsive Czech menu and settings screen.
-- [x] Add a locally bundled Three.js preview scene.
-- [x] Add local settings persistence with invalid-data recovery.
-- [x] Add a build-time service-worker generator for same-origin production assets.
-- [x] Add CI workflow and initial settings tests.
-- [ ] Install npm dependencies and generate a lockfile.
-- [ ] Run TypeScript typecheck, Vitest, production build and browser smoke tests.
-- [ ] Verify installation and offline relaunch on a real Android device.
+The project remains intentionally honest about the remaining production work. It does not yet implement full vehicle dynamics, traffic/pedestrians, a large explorable city, missions/exams, garage progression, collision damage, complete audio, dynamic weather or day/night simulation.
 
-The npm registry was unreachable from the implementation environment during this stage. No successful package install, production build, browser test or device test is claimed.
+## Validation
 
-## Not implemented
-
-Vehicle physics, clutch and gearbox behavior, traffic, pedestrians, world/map content, audio, missions, garage, damage, and full local progression/save system remain future stages.
+Run `npm install`, `npm run typecheck`, `npm test` and `npm run build` before deployment. GitHub Actions performs the production build and deploys `dist/` to GitHub Pages.
